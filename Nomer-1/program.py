@@ -1,103 +1,103 @@
 import cv2
 import numpy as np
-import os
-import shutil
 
-# Struktur folder
-base_folder = "Nomer-1"
-input_folder = os.path.join(base_folder, "Image")
-output_folder = os.path.join(base_folder, "Output")
+def hitung_prosentase_isi_bejana(image_path):
+    # Membaca gambar
+    image = cv2.imread(image_path)
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
-# Membersihkan folder output jika ada
-if os.path.exists(output_folder):
-    shutil.rmtree(output_folder)
-os.makedirs(output_folder, exist_ok=True)
+    # Mengaburkan gambar untuk mengurangi noise
+    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
 
-# Daftar gambar yang tersedia
-print("Available images:")
-for filename in os.listdir(input_folder):
-    print(f"- {filename}")
+    # Deteksi tepian menggunakan Canny
+    edges = cv2.Canny(blurred, 50, 150)
+    cv2.imshow("Tepian Bejana", edges)  # Menampilkan hasil deteksi tepian
 
-# Input gambar
-input_file = input("Enter the name of the image file (e.g., 'image1.png'): ").strip()
-input_path = os.path.join(input_folder, input_file)
+    # Temukan kontur pada citra
+    contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-if not os.path.exists(input_path):
-    raise FileNotFoundError(f"Image '{input_file}' does not exist in folder '{input_folder}'.")
+    if not contours:
+        print("Bejana tidak ditemukan.")
+        return
 
-# Membaca gambar
-image = cv2.imread(input_path)
-if image is None:
-    raise FileNotFoundError(f"Image '{input_file}' could not be loaded. Please check the file format and integrity.")
+    # Pilih kontur terbesar (diasumsikan sebagai bejana)
+    bejana_contour = max(contours, key=cv2.contourArea)
 
-# Langkah 1: Konversi ke grayscale dan Gaussian Blur
-gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+    # Gambarkan kontur bejana pada gambar asli
+    image_with_contour = image.copy()
+    cv2.drawContours(image_with_contour, [bejana_contour], -1, (0, 255, 0), 2)
 
-# Langkah 2: Threshold adaptif
-adaptive_thresh = cv2.adaptiveThreshold(
-    blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2
-)
-adaptive_thresh_path = os.path.join(output_folder, f"adaptive_thresh_{input_file}")
-cv2.imwrite(adaptive_thresh_path, adaptive_thresh)
+    # Hitung area bejana
+    luas_bejana = cv2.contourArea(bejana_contour)
 
-# Langkah 3: Deteksi tepian menggunakan Canny dengan threshold rendah
-edges = cv2.Canny(adaptive_thresh, 10, 50)  # Gunakan threshold rendah
-edge_image_path = os.path.join(output_folder, f"edges_{input_file}")
-cv2.imwrite(edge_image_path, edges)
+    # Dapatkan bounding box untuk menentukan isi bejana
+    x, y, w, h = cv2.boundingRect(bejana_contour)
 
-# Langkah 4: Deteksi kontur terbesar untuk area bejana
-contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-if len(contours) == 0:
-    raise ValueError("No contours found. Please check the input image.")
+    # Asumsikan isi bejana >50% dari tinggi
+    batas_isi_y = y + int(h / 2)
 
-# Kontur terbesar dianggap sebagai bejana
-bejana_contour = max(contours, key=cv2.contourArea)
-bejana_mask = np.zeros_like(gray)
-cv2.drawContours(bejana_mask, [bejana_contour], -1, 255, -1)
+    # Buat mask untuk menghitung area isi bejana
+    mask = np.zeros_like(gray)
+    cv2.drawContours(mask, [bejana_contour], -1, 255, -1) 
+    mask[batas_isi_y:, :] = 0 
 
-# Simpan gambar bejana mask
-bejana_mask_path = os.path.join(output_folder, f"bejana_mask_{input_file}")
-cv2.imwrite(bejana_mask_path, bejana_mask)
+    # Hitung area isi bejana
+    luas_isi_bejana = cv2.countNonZero(mask)
 
-# Langkah 5: Deteksi isi bejana
-hsv_image = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-mask_fill = cv2.inRange(hsv_image, (10, 100, 100), (40, 255, 255))  # Sesuaikan warna isi
-isi_bejana_mask = cv2.bitwise_and(bejana_mask, mask_fill)
+    # Hitung prosentase isi bejana
+    prosentase_isi = (luas_isi_bejana / luas_bejana) * 100
 
-# Simpan gambar isi bejana
-filled_image_path = os.path.join(output_folder, f"filled_{input_file}")
-cv2.imwrite(filled_image_path, isi_bejana_mask)
+    # Buat gambar hasil mask isi bejana
+    mask_colored = np.zeros_like(image)
+    mask_colored[mask > 0] = [0, 0, 255]
+    hasil_image = cv2.addWeighted(image, 0.7, mask_colored, 0.3, 0)
 
-# Langkah 6: Hitung area total dan isi
-total_area = cv2.countNonZero(bejana_mask)
-filled_area = cv2.countNonZero(isi_bejana_mask)
+    hasil_teks_1 = f"Isi = {luas_isi_bejana:.1f}"
+    hasil_teks_2 = f"Total = {luas_bejana:.1f}"
+    hasil_teks_3 = f"{prosentase_isi:.2f}%"
+    
+    (w_teks1, h_teks1), _ = cv2.getTextSize(hasil_teks_1, cv2.FONT_HERSHEY_SIMPLEX, 0.3, 2)
+    (w_teks2, h_teks2), _ = cv2.getTextSize(hasil_teks_2, cv2.FONT_HERSHEY_SIMPLEX, 0.3, 2)
+    (w_teks3, h_teks3), _ = cv2.getTextSize(hasil_teks_3, cv2.FONT_HERSHEY_SIMPLEX, 0.3, 2)
 
-# Hitung persentase isi
-percentage = (filled_area / total_area) * 100 if total_area > 0 else 0
+    pos_teks1 = ((image.shape[1] - w_teks1) // 2, (image.shape[0] - (h_teks1 + h_teks2 + h_teks3)) // 2)
+    pos_teks2 = ((image.shape[1] - w_teks2) // 2, (image.shape[0] - (h_teks2 + h_teks3)) // 2 + h_teks1)
+    pos_teks3 = ((image.shape[1] - w_teks3) // 2, (image.shape[0] - h_teks3) // 2 + h_teks1 + h_teks2)
 
-# Simpan hasil akhir dengan anotasi
-output_image = image.copy()
-cv2.putText(output_image, f"Isi: {filled_area}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
-cv2.putText(output_image, f"Total: {total_area}", (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-cv2.putText(output_image, f"Persentase: {percentage:.2f}%", (10, 110), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
+    cv2.putText(hasil_image, hasil_teks_1, pos_teks1, cv2.FONT_HERSHEY_SIMPLEX, 0.3, (255, 255, 255), 2)
+    cv2.putText(hasil_image, hasil_teks_2, pos_teks2, cv2.FONT_HERSHEY_SIMPLEX, 0.3, (255, 255, 255), 2)
+    cv2.putText(hasil_image, hasil_teks_3, pos_teks3, cv2.FONT_HERSHEY_SIMPLEX, 0.3, (255, 255, 255), 2)
 
-# Simpan hasil gambar akhir
-output_image_path = os.path.join(output_folder, f"result_{input_file}")
-cv2.imwrite(output_image_path, output_image)
+    # Membuat gambar hasil
+    mask_bejana = np.zeros_like(image)
+    cv2.drawContours(mask_bejana, [bejana_contour], -1, (0, 255, 0), thickness=cv2.FILLED)
 
-# Simpan hasil ke file teks
-output_text_path = os.path.join(output_folder, f"result_{os.path.splitext(input_file)[0]}.txt")
-with open(output_text_path, "w") as text_file:
-    text_file.write(f"Isi: {filled_area}\n")
-    text_file.write(f"Total: {total_area}\n")
-    text_file.write(f"Persentase: {percentage:.2f}%\n")
+    center_point_image = image.copy()
+    M = cv2.moments(bejana_contour)
+    if M["m00"] != 0:
+        cX = int(M["m10"] / M["m00"])
+        cY = int(M["m01"] / M["m00"])
+        cv2.circle(center_point_image, (cX, cY), 5, (255, 0, 0), -1)
 
-# Informasi ke pengguna
-print(f"Processing complete. Results saved in:")
-print(f"- Adaptive Threshold: {adaptive_thresh_path}")
-print(f"- Edge Image: {edge_image_path}")
-print(f"- Bejana Mask: {bejana_mask_path}")
-print(f"- Filled Area Image: {filled_image_path}")
-print(f"- Final Image: {output_image_path}")
-print(f"- Text: {output_text_path}")
+    # Menampilkan semua tahap
+    r_image = cv2.resize(image, (image.shape[1] * 2, image.shape[0] * 2)) 
+    r_hasil_image = cv2.resize(hasil_image, (image.shape[1] * 2, image.shape[0] * 2))
+    r_center_point_image = cv2.resize(center_point_image, (image.shape[1] * 2, image.shape[0] * 2))
+    r_mask_bejana = cv2.resize(mask_bejana, (image.shape[1] * 2, image.shape[0] * 2))
+    r_edges = cv2.resize(edges, (image.shape[1] * 2, image.shape[0] * 2))
+
+    # Menampilkan gambar-gambar
+    cv2.imshow("Gambar Asli", r_image)
+    cv2.imshow("Tepian Bejana", r_edges)
+    cv2.imshow("Center Point", r_center_point_image)
+    cv2.imshow("Luas Bejana", r_mask_bejana)
+    cv2.imshow("Luas Isi Bejana", r_hasil_image)
+
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+
+    print(f"{hasil_teks_1}\n{hasil_teks_2}\n{hasil_teks_3}")
+
+# Contoh penggunaan
+image_path = "Image/image1.png"
+hitung_prosentase_isi_bejana(image_path)

@@ -1,7 +1,7 @@
 # Project-PCD
 
 ## Kelompok :
-1. Christophani Gregorius Wonges
+1. Christophani Gregorius Phillip Wonges
 2. Egbert Wangarry
 3. Given Lee
 
